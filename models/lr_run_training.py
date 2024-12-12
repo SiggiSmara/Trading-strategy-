@@ -4,7 +4,7 @@ author - Kaneel Senevirathne
 date - 1/13/2022
 """
 
-from td.client import TDClient
+# from td.client import TDClient
 import requests, time, re, os
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -24,6 +24,8 @@ from datetime import datetime
 import os
 import sys
 import pickle
+
+from pathlib import Path
 
 #append path
 current_dir = os.getcwd()
@@ -45,6 +47,7 @@ class LR_training:
         self.model_version = model_version
         self.threshold = threshold
         
+        self.my_path:Path = Path(os.getcwd())
         if start_date:
             self.start_date = start_date
         if end_date:
@@ -54,13 +57,13 @@ class LR_training:
         dow = ['AXP', 'AMGN', 'AAPL', 'BA', 'CAT', 'CSCO', 'CVX', 'GS', 'HD', 'HON', 'IBM', 'INTC',\
         'JNJ', 'KO', 'JPM', 'MCD', 'MMM', 'MRK', 'MSFT', 'NKE', 'PG', 'TRV', 'UNH',\
         'CRM', 'VZ', 'V', 'WBA', 'WMT', 'DIS']
-        sp500 = #use pandas to open the companies csv
+        sp500 = pd.read_csv("companies.csv")
         sp = list(sp500['Ticker'])
         stocks = dow + sp[:20]
         self.stocks = list(np.unique(stocks))
 
         #main dataframe
-        self.main_df = pd.DataFrame(columns = ['volume', 'normalized_value', '3_reg', '5_reg', '10_reg', '20_reg', 'target'])
+        self.main_df = pd.DataFrame(columns = ['volume', 'normalized_value', '3_reg', '5_reg', '10_reg', '20_reg', 'target', "stock"])
 
         #init models
         self.scaler = MinMaxScaler()
@@ -77,13 +80,23 @@ class LR_training:
         """
         get train and test data
         """ 
-        for stock in self.stocks:
-            try: 
-                df = stock_utils.create_train_data(stock, n = 10)
-                self.main_df = self.main_df.append(df)
-            except:
-                pass
-        print(f'{len(self.main_df)} samples were fetched from the database..')
+        picklep_path = self.my_path / "models" / "finance_data.sav"
+        if picklep_path.is_file():
+            self.main_df = pd.read_pickle(picklep_path)
+        else:
+            for stock in self.stocks:
+                try: 
+                    print(f"Looking for {stock}")
+                    df = stock_utils.create_train_data(stock, n = 10, end_date = datetime(year=2020, month=12, day=31))
+                    df["stock"] = stock
+                    self.main_df = pd.concat([self.main_df, df], axis=0)
+                except Exception as e:
+                    print(e)
+                    pass
+            self.main_df.to_pickle(self.my_path / "models" / "finance_data.sav") 
+        self.main_df = self.main_df.drop("stock", axis=1)
+
+        print(f'{self.main_df.shape[0]} samples were fetched from the database..')
 
     def create_train_test(self):
         """
@@ -133,30 +146,32 @@ class LR_training:
     def save_model(self):
 
         #save models
-        saved_models_dir = os.path.join(os.getcwd(), 'saved_models')
+        saved_models_dir = self.my_path / 'saved_models'
         model_file = f'lr_{self.model_version}.sav'
-        model_dir = os.path.join(saved_models_dir, model_file)
+        model_dir = saved_models_dir /  model_file
         pickle.dump(self.lr, open(model_dir, 'wb'))
 
         scaler_file = f'scaler_{self.model_version}.sav'
-        scaler_dir = os.path.join(saved_models_dir, scaler_file)
+        scaler_dir = saved_models_dir /  scaler_file
         pickle.dump(self.scaler, open(scaler_dir, 'wb'))
 
         print(f'Saved the model and scaler in {saved_models_dir}')
-        cm_path = os.path.join(os.getcwd(), 'results\Confusion Matrices')
+        cm_path = self.my_path /  'results' / 'Confusion Matrices'
         
         #save cms
         plt.figure()
         self.cmd.plot()
-        plt.savefig(f'{cm_path}\\cm_{self.model_version}.jpg')
+        plt.savefig( cm_path / f'cm_{self.model_version}.jpg')
 
         plt.figure()
         self.cmd_thresholded.plot()
-        plt.savefig(f'{cm_path}\\cm_thresholded_{self.model_version}.jpg')
+        plt.savefig(cm_path / f'cm_thresholded_{self.model_version}.jpg')
         print(f'Figures saved in {cm_path}')
 
 import argparse
 
 if __name__ == "__main__":
-    run_lr = LR_training('v2')
+    run_lr = LR_training('v3')
+    
+   
 
