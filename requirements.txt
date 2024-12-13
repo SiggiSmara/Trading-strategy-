@@ -1,5 +1,5 @@
 jupyterlab
-yfinance
+yfinance[nospam]
 matplotlib
 pandas
 numpy
@@ -7,3 +7,4 @@ seaborn
 scipy
 scikit-learn
 tqdm
+openpyxl

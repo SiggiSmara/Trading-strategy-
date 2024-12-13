@@ -19,11 +19,16 @@ stock utils for preparing training data.
 #TD API - 
 TD_API = 'XXXXX' ### your TD ameritrade api key
 
-data_path = Path(os.getcwd()) / "stock_data" / "curr_df"
+regressions = [3, 5, 10, 20, 40]
+reg_cols = [f"{reg}_reg" for reg in regressions]
+reg_col="normalized_value"
+# reg_col="close"
+
+data_path = Path(os.getcwd()) / "stock_data" / "yf_df_1d"
 if data_path.is_file():
-    curr_df = pd.read_pickle(data_path)
+    yf_df_1d = pd.read_pickle(data_path)
 else:
-    curr_df = pd.DataFrame()
+    yf_df_1d = pd.DataFrame()
 
 def timestamp(dt):
     epoch = datetime.utcfromtimestamp(0)
@@ -40,7 +45,7 @@ def linear_regression(x, y):
     
     return lr.coef_[0][0]
 
-def n_day_regression(n, df, idxs):
+def n_day_regression(n, df, idxs, reg_col:str = "close"):
     """
     n day regression.
     """
@@ -49,9 +54,13 @@ def n_day_regression(n, df, idxs):
     df[_varname_] = np.nan
 
     for idx in idxs:
-        if idx > n:
+        if idx> n:
             
-            y = df['close'][idx - n: idx].to_numpy()
+            # y = df[reg_col][idx - n +1: idx+1]
+            # print(idx)
+            # print(y)
+            y = df[reg_col][idx - n+1: idx+1].to_numpy()
+            
             x = np.arange(0, n)
             #reshape
             y = y.reshape(y.shape[0], 1)
@@ -136,7 +145,7 @@ def normalized_values(high, low, close):
 #     return data, idx_with_mins, idx_with_maxs
 
 def save_stock_data(stocks:list, start_date:datetime, end_date:datetime):
-        data_path = Path(__file__).parent.parent / "stock_data" / "curr_df.sav"
+        data_path = Path(__file__).parent.parent / "stock_data" / "yf_df_1d.sav"
 
         def get_yf(stock:str, start_date:datetime, end_date:datetime):
             df = get_yfinance_data(stock=stock, start_date=start_date, end_date=end_date)
@@ -149,26 +158,26 @@ def save_stock_data(stocks:list, start_date:datetime, end_date:datetime):
             return df2
 
         if data_path.is_file():
-            curr_df = pd.read_pickle(data_path)
-            print(f"pickle read with shape {curr_df.shape}")
+            yf_df_1d = pd.read_pickle(data_path)
+            print(f"pickle read with shape {yf_df_1d.shape}")
         else:
-            curr_df = pd.DataFrame()
-        # print(curr_df.shape)
-        # print(curr_df)
+            yf_df_1d = pd.DataFrame()
+        # print(yf_df_1d.shape)
+        # print(yf_df_1d)
         for stock in stocks:
-            if curr_df.shape[1] == 0 or "date" not in curr_df.columns or "stock" not in curr_df.columns:
+            if yf_df_1d.shape[1] == 0 or "date" not in yf_df_1d.columns or "stock" not in yf_df_1d.columns:
                 print(f"Getting new finance data for {stock}@{start_date}-{end_date}")
                 df = get_yf(stock=stock, start_date=start_date, end_date=end_date)
-                curr_df = save_yf(df, curr_df)
-            elif not all((curr_df["date"][curr_df["stock"]== stock].max() >= end_date-timedelta(1), 
-                 curr_df["date"][curr_df["stock"]== stock].min() <= start_date)):
+                yf_df_1d = save_yf(df, yf_df_1d)
+            elif not all((yf_df_1d["date"][yf_df_1d["stock"]== stock].max() >= end_date-timedelta(1), 
+                 yf_df_1d["date"][yf_df_1d["stock"]== stock].min() <= start_date)):
                 print(f"Getting updating finance data for {stock}@{start_date}-{end_date}")
-                # print(curr_df["date"][curr_df["stock"]== stock])
-                # print((curr_df["date"][curr_df["stock"]== stock].max(skipna=True) >= end_date-timedelta(1)))
-                # print((curr_df["date"][curr_df["stock"]== stock].min(skipna=True), start_date))
+                # print(yf_df_1d["date"][yf_df_1d["stock"]== stock])
+                # print((yf_df_1d["date"][yf_df_1d["stock"]== stock].max(skipna=True) >= end_date-timedelta(1)))
+                # print((yf_df_1d["date"][yf_df_1d["stock"]== stock].min(skipna=True), start_date))
                 # print(f"Getting missing finance data for {stock}@{start_date}-{end_date}")
                 df = get_yf(stock=stock, start_date=start_date, end_date=end_date)
-                curr_df = save_yf(df, curr_df)
+                yf_df_1d = save_yf(df, yf_df_1d)
                 
             
 
@@ -197,20 +206,27 @@ def get_yfinance_data(stock:str, start_date:datetime = None, end_date:datetime =
     return df
 
 def get_stored_data(stock:str, end_date:datetime, delta_days:int = 0 )->pd.DataFrame:
-    data_path = Path(__file__).parent.parent / "stock_data" / "curr_df.sav"
+    data_path = Path(__file__).parent.parent / "stock_data" / "yf_df_1d.sav"
     if data_path.is_file():
-        curr_df = pd.read_pickle(data_path)
+        yf_df_1d = pd.read_pickle(data_path)
     else:
-        raise ValueError("No curr_df found")
-    df = curr_df[curr_df["stock"] == stock]
+        raise ValueError("No yf_df_1d found")
+    df = yf_df_1d[yf_df_1d["stock"] == stock]
     if df.shape[0] == 0:
         raise ValueError(f"Stock {stock} not found")
+    else:
+        # print(f"stock found for {stock}, df shape is: {df.shape}")
+        pass
     
     if delta_days == 0:
         df = df[df["date"] == end_date]
     else:
-        end = np.where(df['date'] == end_date)[0][0]
+        # end = np.where(df['date'] >= end_date)
+        # print(f"end_date {end_date} looked for: {end[0]}")
+        # print(f"min date: {df['date'].min()}, max date: {df['date'].max()}")
+        end = np.where(df['date'] >= end_date)[0][0]
         start = end - delta_days
+        # print((start,end))
         df = df.iloc[start:end]
     return df.reset_index(drop=True)
     
@@ -231,12 +247,12 @@ def get_stock_price(stock, date):
         raise ValueError(f"{stock} has no value for date {date}")
     
 def get_trading_days(start_date:datetime, end_date:datetime) -> pd.Series:
-    data_path = Path(__file__).parent.parent / "stock_data" / "curr_df.sav"
+    data_path = Path(__file__).parent.parent / "stock_data" / "yf_df_1d.sav"
     if data_path.is_file():
-        curr_df:pd.DataFrame = pd.read_pickle(data_path)
+        yf_df_1d:pd.DataFrame = pd.read_pickle(data_path)
     else:
-        raise ValueError("No curr_df found")
-    ser = curr_df["date"].drop_duplicates().sort_values(ascending=True).reset_index(drop=True)
+        raise ValueError("No yf_df_1d found")
+    ser = yf_df_1d["date"].drop_duplicates().sort_values(ascending=True).reset_index(drop=True)
     
     my_end = np.where(ser <= end_date)
     my_start = np.where(ser >= start_date)
@@ -250,41 +266,66 @@ def get_trading_days(start_date:datetime, end_date:datetime) -> pd.Series:
 
 def get_data(sym:str, end_date:datetime, delta_days:int, n:int = 10):
     data = get_stored_data(stock=sym, end_date=end_date, delta_days=delta_days)
+    # print(data.shape)
     if data.shape[0] == 0:
         raise ValueError("No data found")
     #add the noramlzied value function and create a new column
     data['normalized_value'] = data.apply(lambda x: normalized_values(x.high, x.low, x.close), axis = 1)
     
     #column with local minima and maxima
-    data['loc_min'] = data.iloc[argrelextrema(data.close.values, np.less_equal, order = n)[0]]['close']
-    data['loc_max'] = data.iloc[argrelextrema(data.close.values, np.greater_equal, order = n)[0]]['close']
+    idx_with_mins = argrelextrema(data.close.values, np.less_equal, order = n)[0]
+    idx_with_maxs = argrelextrema(data.close.values, np.greater_equal, order = n)[0]
+    data['loc_min'] = data.iloc[idx_with_mins]['close']
+    # data['loc_min'] = data.iloc[argrelextrema(data.close.values, np.less_equal, order = n)[0]]['close']
+    data['loc_max'] = data.iloc[idx_with_maxs]['close']
 
     #idx with mins and max
-    idx_with_mins = np.where(data['loc_min'] > 0)[0]
-    idx_with_maxs = np.where(data['loc_max'] > 0)[0]
-    
-    return data, idx_with_mins, idx_with_maxs
+    # idx_with_mins = np.where(data['loc_min'] > 0)[0]
+    # idx_with_maxs = np.where(data['loc_max'] > 0)[0]
+    # data = data.reset_index(drop=True)
+    idx_no_min_max = [x for x in data.index if x not in idx_with_mins and x not in idx_with_maxs]
+    idx_no_min_max = np.random.choice(idx_no_min_max, int(len(idx_no_min_max) * 0.035), replace=False)
+    data["loc_no_mm"] = data.iloc[idx_no_min_max]['close']
+
+    return data, idx_with_mins, idx_with_maxs, idx_no_min_max
 
 def create_train_data(stock, end_date, delta_days:int, n = 10):
 
     #get data to a dataframe
-    data, idxs_with_mins, idxs_with_maxs = get_data(stock, end_date=end_date, delta_days=delta_days, n=n)
-    
+    data, idxs_with_mins, idxs_with_maxs, idx_no_min_max = get_data(stock, end_date=end_date, delta_days=delta_days, n=n)
     #create regressions for 3, 5 and 10 days
-    data = n_day_regression(3, data, list(idxs_with_mins) + list(idxs_with_maxs))
-    data = n_day_regression(5, data, list(idxs_with_mins) + list(idxs_with_maxs))
-    data = n_day_regression(10, data, list(idxs_with_mins) + list(idxs_with_maxs))
-    data = n_day_regression(20, data, list(idxs_with_mins) + list(idxs_with_maxs))
-  
-    _data_ = data[(data['loc_min'] > 0) | (data['loc_max'] > 0)].reset_index(drop = True)
+
     
+    for reg in regressions:
+        data = n_day_regression(n=reg, df=data, idxs=list(idxs_with_mins) + list(idxs_with_maxs), reg_col=reg_col)
+
+    # print(data.shape)
+    _data_ = data[(data['loc_min'] > 0) | (data['loc_max'] > 0) ].reset_index(drop = True) #| (data["loc_no_mm"] > 0)
+    mins = _data_['loc_min']
+    maxs = _data_['loc_max']
+    tweens = _data_['loc_no_mm']
+    # List of conditions
+    conditions = [
+        #(tweens > 0)
+        #, 
+        (mins > 0)
+        , (maxs > 0)
+    ]
+    # List of values to return
+    choices  = [
+        #0
+        #, 
+        0
+        , 1
+    ]
+    _data_['target']  = np.select(conditions, choices)
     #create a dummy variable for local_min (0) and max (1)
-    _data_['target'] = [1 if x > 0 else 0 for x in _data_.loc_max]
+    # _data_['target'] = [1 if x > 0 else 0 for x in _data_.loc_max]
     
     #columns of interest
-    cols_of_interest = ['volume', 'normalized_value', '3_reg', '5_reg', '10_reg', '20_reg', 'target']
+    cols_of_interest = ['volume', 'normalized_value', 'target'] + reg_cols 
     _data_ = _data_[cols_of_interest]
-    
+    # print(_data_.shape)
     return _data_.dropna(axis = 0)
 
 def create_test_data_lr(stock, end_date, delta_days:int, n = 10):
@@ -292,17 +333,16 @@ def create_test_data_lr(stock, end_date, delta_days:int, n = 10):
     this function create test data sample for logistic regression model
     """
     #get data to a dataframe
-    data, _, _ = get_data(stock, end_date=end_date, delta_days=delta_days, n=n)
+    data, _, _, _ = get_data(stock, end_date=end_date, delta_days=delta_days, n=n)
     
-    idxs = np.arange(0, len(data))
+    idxs = [len(data)-1, ]
     # print(idxs)
     #create regressions for 3, 5 and 10 days
-    data = n_day_regression(3, data, idxs)
-    data = n_day_regression(5, data, idxs)
-    data = n_day_regression(10, data, idxs)
-    data = n_day_regression(20, data, idxs)
+    for reg in regressions:
+        data = n_day_regression(n=reg, df=data, idxs=idxs, reg_col=reg_col)
     
-    cols = ['close', 'volume', 'normalized_value', '3_reg', '5_reg', '10_reg', '20_reg']
+    
+    cols = ['close', 'volume', 'normalized_value'] + reg_cols 
     data = data[cols]
     # print(data)
     data = data.dropna(axis = 0)
@@ -316,16 +356,14 @@ def predict_trend(stock, _model_, start_date = None, end_date = None, n = 10):
     
     idxs = np.arange(0, len(data))
     #create regressions for 3, 5 and 10 days
-    data = n_day_regression(3, data, idxs)
-    data = n_day_regression(5, data, idxs)
-    data = n_day_regression(10, data, idxs)
-    data = n_day_regression(20, data, idxs)
+    for reg in regressions:
+        data = n_day_regression(n=reg, df=data, idxs=idxs, reg_col=reg_col)
         
     #create a column for predicted value
     data['pred'] = np.nan
 
     #get data
-    cols = ['volume', 'normalized_value', '3_reg', '5_reg', '10_reg', '20_reg']
+    cols = ['volume', 'normalized_value'] + reg_cols 
     x = data[cols]
 
     #scale the x data

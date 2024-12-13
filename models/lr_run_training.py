@@ -32,6 +32,8 @@ current_dir = os.getcwd()
 sys.path.append(current_dir)
 
 from stock_utils import stock_utils
+from stock_utils.stock_utils import reg_cols
+from stock_data import get_data
 import sklearn 
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
@@ -42,7 +44,7 @@ import seaborn as sns
 
 class LR_training:
 
-    def __init__(self, model_version, threshold = 0.98, start_date = None, end_date = None):
+    def __init__(self, model_version, threshold = 0.9, start_date = None, end_date = None):
 
         self.model_version = model_version
         self.threshold = threshold
@@ -63,7 +65,7 @@ class LR_training:
         self.stocks = list(np.unique(stocks))
 
         #main dataframe
-        self.main_df = pd.DataFrame(columns = ['volume', 'normalized_value', '3_reg', '5_reg', '10_reg', '20_reg', 'target', "stock"])
+        self.main_df = pd.DataFrame(columns = ['volume', 'normalized_value', 'target', "stock"] + reg_cols)
 
         #init models
         self.scaler = MinMaxScaler()
@@ -84,14 +86,24 @@ class LR_training:
         if picklep_path.is_file():
             self.main_df = pd.read_pickle(picklep_path)
         else:
+            start_date=datetime(year=2006, month=1, day=1)
+            end_date=datetime(year=2023, month=1, day=1) 
+            get_data.save_stock_data(stocks=self.stocks, start_date=start_date, end_date=end_date, interval="1d")
+            end_date=datetime(year=2021, month=1, day=1)
             for stock in self.stocks:
                 try: 
-                    print(f"Looking for {stock}")
-                    df = stock_utils.create_train_data(stock, n = 10, end_date = datetime(year=2020, month=12, day=31))
+                    print(f"Creating training data for {stock}")
+                    df = stock_utils.create_train_data(
+                        stock, 
+                        n = 3, 
+                        end_date = end_date, 
+                        delta_days=(end_date - start_date).days
+                    )
                     df["stock"] = stock
                     self.main_df = pd.concat([self.main_df, df], axis=0)
                 except Exception as e:
                     print(e)
+                    # exit()
                     pass
             self.main_df.to_pickle(self.my_path / "models" / "finance_data.sav") 
         self.main_df = self.main_df.drop("stock", axis=1)
@@ -102,7 +114,8 @@ class LR_training:
         """
         create train and test data
         """
-        self.main_df = self.main_df.sample(frac = 1, random_state = 3). reset_index(drop = True)
+        # , random_state = 3
+        # self.main_df = self.main_df.sample(frac = 1). reset_index(drop = True)
         self.main_df['target'] = self.main_df['target'].astype('category')
         
         y = self.main_df.pop('target').to_numpy()
@@ -111,9 +124,9 @@ class LR_training:
 
         #test train split
         self.train_x, self.test_x, self.train_y, self.test_y = train_test_split(x, y, \
-            test_size = 0.05, random_state = 50, shuffle = True)
+            test_size = 0.1,  shuffle = True) #random_state = 50,
 
-        print('Created test and train data...')
+        print(f'Created test and train data... {len(self.train_y)} vs {len(self.test_y)}')
 
     def fit_model(self):
 
@@ -123,25 +136,40 @@ class LR_training:
         #predict the test data
         self.predictions = self.lr.predict(self.test_x)
         self.score = self.lr.score(self.test_x, self.test_y)
+        # print(self.predictions )
         print(f'Logistic regression model score: {self.score}')
 
         #preds with threshold
         self.predictions_proba = self.lr._predict_proba_lr(self.test_x)
+        # print(self.predictions_proba)
         self.predictions_proba_thresholded = self._threshold(self.predictions_proba, self.threshold)
       
     def confusion_matrix(self):
         cm = confusion_matrix(self.test_y, self.predictions)
         self.cmd = ConfusionMatrixDisplay(cm)
         
+        # print(self.predictions_proba_thresholded)
         cm_thresholded = confusion_matrix(self.test_y, self.predictions_proba_thresholded)
         self.cmd_thresholded = ConfusionMatrixDisplay(cm_thresholded)
 
         
     def _threshold(self, predictions, threshold):
 
-        prob_thresholded = [0 if x > threshold else 1 for x in predictions[:, 0]]
+        def one_thres(pred, thres):
+            retval = [1 if x > thres else 0 for x in pred]
+            # print(prob_thresholded)
+            if sum(retval) == 0:
+                retval = 0
+            elif sum(retval) > 1:
+                retval = 0 #np.where(pred == np.max(pred))[0][0]
+            else:
+                retval = np.where(np.array(retval) > 0)[0][0]
+            return int(retval)
+        prob_thresholded = [one_thres(x,thres=threshold) for x in predictions]
+        return prob_thresholded
+        # prob_thresholded = [0 if x > threshold else 1 for x in predictions[:, 0]]
 
-        return np.array(prob_thresholded)
+        # return np.array(prob_thresholded)
 
     def save_model(self):
 
@@ -171,7 +199,7 @@ class LR_training:
 import argparse
 
 if __name__ == "__main__":
-    run_lr = LR_training('v3')
+    run_lr = LR_training('v4')
     
    
 

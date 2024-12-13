@@ -3,13 +3,26 @@ import pandas as pd
 from pathlib import Path
 from datetime import datetime, timedelta
 import time
+import math
 
-def save_stock_data(stocks:list, start_date:datetime, end_date:datetime, theo_shape:tuple):
-        data_path = Path(__file__).parent.parent / "stock_data" / "curr_df.sav"
+from requests import Session
+from requests_cache import CacheMixin, SQLiteCache
+from requests_ratelimiter import LimiterMixin, MemoryQueueBucket
+from pyrate_limiter import Duration, RequestRate, Limiter
+class CachedLimiterSession(CacheMixin, LimiterMixin, Session):
+   pass
+
+session = CachedLimiterSession(
+   limiter=Limiter(RequestRate(2, Duration.SECOND*5)),  # max 2 requests per 5 seconds
+   bucket_class=MemoryQueueBucket,
+   backend=SQLiteCache("yfinance.cache"),
+)
+
+def save_stock_data(stocks:list, start_date:datetime, end_date:datetime, interval:str="1d", add_data:bool = True):
+        data_path = Path(__file__).parent.parent / "stock_data" / f"yf_df_{interval}.sav"
 
         def get_yf(stock:str, start_date:datetime, end_date:datetime):
-            df = get_yfinance_data(stock=stock, start_date=start_date, end_date=end_date)
-            time.sleep(2)
+            df = get_yfinance_data(stock=stock, start_date=start_date, end_date=end_date, interval=interval)
             return df
         
         def save_yf(df1, df2):
@@ -19,51 +32,47 @@ def save_stock_data(stocks:list, start_date:datetime, end_date:datetime, theo_sh
             df2.to_pickle(data_path)
             return df2
 
-        if data_path.is_file():
+        if add_data and data_path.is_file():
             curr_df = pd.read_pickle(data_path)
             print(f"pickle read with shape {curr_df.shape}")
         else:
             curr_df = pd.DataFrame()
-        # print(curr_df.shape)
-        # print(curr_df)
+
         for stock in stocks:
-            if curr_df.shape[1] == 0 or "date" not in curr_df.columns or "stock" not in curr_df.columns:
-                print(f"Getting new finance data for {stock}@{start_date}-{end_date}")
-                df = get_yf(stock=stock, start_date=start_date, end_date=end_date)
-                curr_df = save_yf(df, curr_df)
-                if df.shape != theo_shape:
-                    print(f"unexpected shape returned: {df.shape}")
-                    print(f"min date: {df['date'].min()}, max date: {df['date'].max()}")
-            elif not all((curr_df["date"][curr_df["stock"]== stock].max() >= end_date-timedelta(1), 
-                 curr_df["date"][curr_df["stock"]== stock].min() <= start_date)):
-                print(f"Updating finance data for {stock}@{start_date}-{end_date}")
-                # print(curr_df["date"][curr_df["stock"]== stock])
-                # print((curr_df["date"][curr_df["stock"]== stock].max(skipna=True) >= end_date-timedelta(1)))
-                # print((curr_df["date"][curr_df["stock"]== stock].min(skipna=True), start_date))
-                # print(f"Getting missing finance data for {stock}@{start_date}-{end_date}")
-                df = get_yf(stock=stock, start_date=start_date, end_date=end_date)
-                curr_df = save_yf(df, curr_df)
-                if df.shape != theo_shape:
-                    print(f"unexpected shape returned: {df.shape}")
-                    print(f"min date: {df['date'].min()}, max date: {df['date'].max()}")
+            print(f"Updating finance data for {stock}@{start_date}-{end_date}")
+            df = get_yf(stock=stock, start_date=start_date, end_date=end_date)
+            curr_df = save_yf(df, curr_df)
                 
-            
 
-
-def get_yfinance_data(stock:str, start_date:datetime, end_date:datetime) -> pd.DataFrame:
-    
-    if start_date is None:
-        start_date = datetime(2007, 1, 1)
-    
+def get_yfinance_data(stock:str, start_date:datetime, end_date:datetime, interval:str = "1d") -> pd.DataFrame:
+        
     # get the ticker
-    ticker = yf.Ticker(stock)
-    df = ticker.history(start = start_date, end = end_date, interval = "1d")
-
-    #rename the index and reset it, also remove timezone
+    ticker = yf.Ticker(stock, session=session)
+    # print(f"interval: {interval}")
+    if interval == "1h":
+        # make sure the day limit is not reached
+        today = datetime.now()
+        if (today - start_date).days >= 730:
+            start_date = today - timedelta(729)
+            # print(f"start_date changed to: {start_date}")
+        else:
+            pass
+            # print(f"start date within {(start_date - today).days} of today")
+        if (today - end_date).days >= 730:
+            end_date = today
+            # print(f"end_date changed to: {end_date}")
+        else:
+            pass
+            # print(f"end_date date within {(today - end_date).days} of today")
+        
+    df = ticker.history(start = start_date, end = end_date, interval = interval)
+    
+    # convert date index to a date column
     df = df.rename_axis("date").reset_index()
+    # remove timezone
     df["date"] = [x.replace(tzinfo=None) for x in df["date"]]
 
-    #make columns lowercase
+    # make columns lowercase
     df.columns = [x.lower() for x in df.columns]
     df = df[["date", "open", "high", "low", "close", "volume"]]
     df["stock"] = stock
@@ -83,9 +92,14 @@ if __name__ == "__main__":
     end_date = datetime(2022, 1, 1)
     base_stock = "SPY"
 
-    spy = get_yfinance_data(stock=base_stock, start_date=start_date, end_date=end_date)
+    spy = get_yfinance_data(
+        stock=base_stock, 
+        start_date=start_date, 
+        end_date=end_date, 
+        interval="1h"
+    )
     theo_shape = spy.shape
     print(theo_shape)
-    save_stock_data(stocks=stocks, start_date=start_date, end_date=end_date, theo_shape=theo_shape)
+    save_stock_data(stocks=stocks, start_date=start_date, end_date=end_date, interval="1d")
 
-    "V", "DAL", 
+    # "V", "DAL", 

@@ -9,6 +9,7 @@ import numpy as np
 import pickle
 from sklearn.linear_model import LogisticRegression
 from stock_utils.stock_utils import timestamp, create_train_data, get_data, create_test_data_lr, get_stock_price
+from stock_utils.stock_utils import reg_cols
 from datetime import timedelta
 import time
 from pathlib import Path
@@ -35,13 +36,19 @@ def _threshold(probs, threshold):
     """
     Inputs the probability and returns 1 or 0 based on the threshold
     """
-    prob_thresholded = [0 if x > threshold else 1 for x in probs[:, 0]]
-
+    prob_thresholded = [1 if x > threshold else 0 for x in probs[0]]
+    # print(prob_thresholded)
+    if sum(prob_thresholded) == 0:
+        prob_thresholded = 0
+    elif sum(prob_thresholded) > 1:
+        prob_thresholded = 0
+    else:
+        prob_thresholded = np.where(np.array(prob_thresholded) > 0)[0][0]
     return np.array(prob_thresholded)
 
 #create model and scaler instances
-scaler = load_scaler('v3')
-lr = load_LR('v3')
+scaler = load_scaler('v4')
+lr = load_LR('v4')
 
 def LR_v1_predict(stock, start_date, end_date, threshold = 0.98):
     """
@@ -57,14 +64,13 @@ def LR_v1_predict(stock, start_date, end_date, threshold = 0.98):
     # print(close_price)
     close_price = get_stock_price(stock, end_date)
     #get input data to model
-    input_data = data[['volume', 'normalized_value', '3_reg', '5_reg', '10_reg', '20_reg']]
+    input_data = data[['volume', 'normalized_value'] + reg_cols]
     input_data = input_data.to_numpy()[-1].reshape(1, -1)
     #scale input data
     input_data_scaled = scaler.transform(input_data)
     prediction = lr._predict_proba_lr(input_data_scaled)
     prediction_thresholded = _threshold(prediction, threshold)
-   
-    return prediction[:, 0], prediction_thresholded[0], close_price
+    return prediction[0], prediction_thresholded, close_price
 
 def LR_v1_sell(stock, buy_date, buy_price, todays_date, sell_perc = 0.1, hold_till = 3, stop_perc = 0.05):
     """
